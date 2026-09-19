@@ -1,0 +1,27 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Firebase secrets
+serviceAccountKey.json
+firebase-adminsdk-*.json
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+# Duplicate nested project
+heart-disease-project/
