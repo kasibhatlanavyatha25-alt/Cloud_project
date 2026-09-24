@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function roleIs(role) {
+      return signedIn() && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    function ownsPatient(patientId) {
+      return roleIs('patient') && patientId == request.auth.uid;
+    }
+    function activeDoctor(patientId) {
+      return roleIs('doctor')
+        && firestore.get(/databases/(default)/documents/doctor_access/$(patientId + '_' + request.auth.uid)).data.status == 'active';
+    }
+    match /patients/{patientId}/{fileName} {
+      allow read: if signedIn() && (ownsPatient(patientId) || activeDoctor(patientId) || roleIs('admin'));
+      allow create, update: if ownsPatient(patientId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png'];
+      allow delete: if ownsPatient(patientId) || roleIs('admin');
+    }
+  }
+}

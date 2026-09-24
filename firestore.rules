@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Data model: users/{uid} has role/name/email; patients/{uid} is patient-owned;
+    // doctors/{uid} contains public directory fields; medical_records, lab_reports,
+    // predictions are flat collections with patientId; doctor_access/{patientId_doctorId}
+    // is patient-controlled sharing; audit_logs are admin-readable.
+    function signedIn() { return request.auth != null; }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
+    function roleIs(role) {
+      return signedIn() && userDoc(request.auth.uid).data.role == role;
+    }
+    function isAdmin() { return roleIs('admin'); }
+    function isPatient() { return roleIs('patient'); }
+    function isDoctor() { return roleIs('doctor'); }
+    function ownsPatient(patientId) {
+      return signedIn() && patientId == request.auth.uid && isPatient();
+    }
+    function activeDoctor(patientId) {
+      return isDoctor() && exists(/databases/$(database)/documents/doctor_access/$(patientId + '_' + request.auth.uid))
+        && get(/databases/$(database)/documents/doctor_access/$(patientId + '_' + request.auth.uid)).data.status == 'active';
+    }
+    function mayReadPatient(patientId) {
+      return isAdmin() || ownsPatient(patientId) || activeDoctor(patientId);
+    }
+    function validUser(uid) {
+      return request.resource.data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 100
+        && request.resource.data.email is string && request.resource.data.email.size() <= 254
+        && request.resource.data.role in ['patient', 'doctor', 'admin']
+        && request.resource.data.createdAt is timestamp;
+    }
+    function validVitals() {
+      return !('vitalSigns' in request.resource.data) || (
+        request.resource.data.vitalSigns is map
+        && request.resource.data.vitalSigns.keys().hasOnly(['bloodPressure', 'heartRate', 'temperature', 'bloodSugar', 'cholesterol', 'weight', 'height'])
+        && (!('bloodPressure' in request.resource.data.vitalSigns) || (request.resource.data.vitalSigns.bloodPressure is string && request.resource.data.vitalSigns.bloodPressure.matches('^[0-9]{2,3}/[0-9]{2,3}$')))
+        && (!('heartRate' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.heartRate is int || request.resource.data.vitalSigns.heartRate is float) && request.resource.data.vitalSigns.heartRate >= 20 && request.resource.data.vitalSigns.heartRate <= 300))
+        && (!('temperature' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.temperature is int || request.resource.data.vitalSigns.temperature is float) && request.resource.data.vitalSigns.temperature >= 25 && request.resource.data.vitalSigns.temperature <= 45))
+        && (!('bloodSugar' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.bloodSugar is int || request.resource.data.vitalSigns.bloodSugar is float) && request.resource.data.vitalSigns.bloodSugar >= 1 && request.resource.data.vitalSigns.bloodSugar <= 2000))
+        && (!('cholesterol' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.cholesterol is int || request.resource.data.vitalSigns.cholesterol is float) && request.resource.data.vitalSigns.cholesterol >= 1 && request.resource.data.vitalSigns.cholesterol <= 2000))
+        && (!('weight' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.weight is int || request.resource.data.vitalSigns.weight is float) && request.resource.data.vitalSigns.weight >= 1 && request.resource.data.vitalSigns.weight <= 500))
+        && (!('height' in request.resource.data.vitalSigns) || ((request.resource.data.vitalSigns.height is int || request.resource.data.vitalSigns.height is float) && request.resource.data.vitalSigns.height >= 30 && request.resource.data.vitalSigns.height <= 260))
+      );
+    }
+    function validPatient(uid) {
+      return request.resource.data.keys().hasAll(['patientId', 'userId', 'name', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['patientId', 'userId', 'name', 'age', 'gender', 'phone', 'symptoms', 'medicalHistory', 'familyHistory', 'allergies', 'medications', 'vitalSigns', 'createdAt', 'updatedAt'])
+        && request.resource.data.patientId == uid && request.resource.data.userId == uid
+        && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 100
+        && (!('age' in request.resource.data) || request.resource.data.age == null || (request.resource.data.age is int && request.resource.data.age >= 0 && request.resource.data.age <= 120))
+        && (!('gender' in request.resource.data) || request.resource.data.gender == null || request.resource.data.gender in ['female', 'male', 'non-binary', 'prefer-not-to-say'])
+        && (!('symptoms' in request.resource.data) || (request.resource.data.symptoms is string && request.resource.data.symptoms.size() <= 4000))
+        && (!('medicalHistory' in request.resource.data) || (request.resource.data.medicalHistory is string && request.resource.data.medicalHistory.size() <= 4000))
+        && (!('familyHistory' in request.resource.data) || (request.resource.data.familyHistory is string && request.resource.data.familyHistory.size() <= 4000))
+        && (!('allergies' in request.resource.data) || (request.resource.data.allergies is string && request.resource.data.allergies.size() <= 4000))
+        && (!('medications' in request.resource.data) || (request.resource.data.medications is string && request.resource.data.medications.size() <= 4000))
+        && (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 30))
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && validVitals();
+    }
+    function validRecord() {
+      return request.resource.data.keys().hasAll(['patientId', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['recordId', 'patientId', 'symptoms', 'medicalHistory', 'familyHistory', 'allergies', 'medications', 'vitalSigns', 'kind', 'note', 'authorId', 'createdAt', 'updatedAt'])
+        && request.resource.data.patientId is string
+        && (!('symptoms' in request.resource.data) || (request.resource.data.symptoms is string && request.resource.data.symptoms.size() <= 4000))
+        && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 4000))
+        && (!('medicalHistory' in request.resource.data) || (request.resource.data.medicalHistory is string && request.resource.data.medicalHistory.size() <= 4000))
+        && (!('familyHistory' in request.resource.data) || (request.resource.data.familyHistory is string && request.resource.data.familyHistory.size() <= 4000))
+        && (!('allergies' in request.resource.data) || (request.resource.data.allergies is string && request.resource.data.allergies.size() <= 4000))
+        && (!('medications' in request.resource.data) || (request.resource.data.medications is string && request.resource.data.medications.size() <= 4000))
+        && validVitals()
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+    function validReport() {
+      return request.resource.data.keys().hasAll(['patientId', 'fileName', 'fileType', 'storagePath', 'uploadedAt', 'uploadedBy'])
+        && request.resource.data.keys().hasOnly(['reportId', 'patientId', 'fileName', 'fileType', 'storagePath', 'description', 'uploadedAt', 'uploadedBy', 'reportType'])
+        && request.resource.data.patientId is string
+        && request.resource.data.fileName is string && request.resource.data.fileName.size() <= 180
+        && request.resource.data.fileType in ['application/pdf', 'image/jpeg', 'image/png']
+        && request.resource.data.storagePath is string
+        && request.resource.data.uploadedBy == request.auth.uid
+        && request.resource.data.uploadedAt is timestamp;
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn() && request.auth.uid == uid && validUser(uid)
+        && request.resource.data.role == 'patient';
+      allow update: if isAdmin() && validUser(uid)
+        || (signedIn() && request.auth.uid == uid && validUser(uid)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+      allow delete: if isAdmin();
+    }
+
+    match /patients/{patientId} {
+      allow get: if mayReadPatient(patientId);
+      allow list: if isAdmin();
+      allow create: if ownsPatient(patientId) && validPatient(patientId);
+      allow update: if (ownsPatient(patientId) || isAdmin()) && validPatient(patientId)
+        && request.resource.data.userId == resource.data.userId;
+      allow delete: if isAdmin();
+    }
+
+    match /doctors/{doctorId} {
+      allow read: if signedIn() && (isPatient() || isDoctor() || isAdmin());
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['doctorId', 'userId', 'name', 'email', 'specialization', 'createdAt'])
+        && request.resource.data.doctorId == doctorId && request.resource.data.userId == doctorId
+        && request.resource.data.name is string && request.resource.data.email is string;
+      allow delete: if isAdmin();
+    }
+
+    match /medical_records/{recordId} {
+      allow read: if mayReadPatient(resource.data.patientId);
+      allow create: if validRecord() && (ownsPatient(request.resource.data.patientId)
+        || (activeDoctor(request.resource.data.patientId) && request.resource.data.kind == 'clinical_note'
+          && request.resource.data.authorId == request.auth.uid));
+      allow update: if validRecord() && ownsPatient(resource.data.patientId)
+        && request.resource.data.patientId == resource.data.patientId;
+      allow delete: if ownsPatient(resource.data.patientId) || isAdmin();
+    }
+
+    match /lab_reports/{reportId} {
+      allow read: if mayReadPatient(resource.data.patientId);
+      allow create: if validReport() && ownsPatient(request.resource.data.patientId)
+        && request.resource.data.storagePath.matches('patients/' + request.auth.uid + '/[^/]+');
+      allow update: if ownsPatient(resource.data.patientId) && validReport()
+        && request.resource.data.patientId == resource.data.patientId;
+      allow delete: if ownsPatient(resource.data.patientId) || isAdmin();
+    }
+
+    match /predictions/{predictionId} {
+      allow read: if mayReadPatient(resource.data.patientId);
+      // The Flask Admin SDK writes predictions after verifying an ID token and profile role.
+      allow create, update, delete: if false;
+    }
+
+    match /doctor_access/{accessId} {
+      allow read: if signedIn() && (resource.data.patientId == request.auth.uid
+        || resource.data.doctorId == request.auth.uid || isAdmin());
+      allow create: if isPatient()
+        && request.resource.data.keys().hasAll(['accessId', 'patientId', 'doctorId', 'status', 'grantedAt'])
+        && request.resource.data.keys().hasOnly(['accessId', 'patientId', 'doctorId', 'status', 'grantedAt', 'revokedAt'])
+        && request.resource.data.patientId == request.auth.uid
+        && request.resource.data.accessId == accessId
+        && request.resource.data.status == 'active'
+        && request.resource.data.grantedAt is timestamp
+        && exists(/databases/$(database)/documents/doctors/$(request.resource.data.doctorId));
+      allow update: if isPatient() && resource.data.patientId == request.auth.uid
+        && request.resource.data.patientId == resource.data.patientId
+        && request.resource.data.doctorId == resource.data.doctorId
+        && ((request.resource.data.status == 'revoked'
+          && request.resource.data.revokedAt is timestamp
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'revokedAt']))
+          || (resource.data.status == 'revoked' && request.resource.data.status == 'active'
+            && request.resource.data.grantedAt is timestamp
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'grantedAt', 'revokedAt'])));
+      allow delete: if isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['userId', 'action', 'patientId', 'timestamp'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.action in ['profile.updated', 'record.created', 'report.uploaded', 'access.granted', 'access.revoked'];
+      allow update, delete: if isAdmin();
+    }
+  }
+}

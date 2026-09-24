@@ -1,0 +1,10 @@
+{
+  "indexes": [
+    {"collectionGroup": "predictions", "queryScope": "COLLECTION", "fields": [{"fieldPath": "patientId", "order": "ASCENDING"}, {"fieldPath": "predictionTimestamp", "order": "DESCENDING"}]},
+    {"collectionGroup": "lab_reports", "queryScope": "COLLECTION", "fields": [{"fieldPath": "patientId", "order": "ASCENDING"}, {"fieldPath": "uploadedAt", "order": "DESCENDING"}]},
+    {"collectionGroup": "medical_records", "queryScope": "COLLECTION", "fields": [{"fieldPath": "patientId", "order": "ASCENDING"}, {"fieldPath": "createdAt", "order": "DESCENDING"}]},
+    {"collectionGroup": "doctor_access", "queryScope": "COLLECTION", "fields": [{"fieldPath": "doctorId", "order": "ASCENDING"}, {"fieldPath": "status", "order": "ASCENDING"}]},
+    {"collectionGroup": "doctor_access", "queryScope": "COLLECTION", "fields": [{"fieldPath": "patientId", "order": "ASCENDING"}, {"fieldPath": "status", "order": "ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}

@@ -1,27 +1,18 @@
-# Python
-venv/
-__pycache__/
-*.pyc
-
-# Node
-node_modules/
-frontend/node_modules/
-frontend/dist/
-
-# Environment / secrets
 .env
 .env.*
 !.env.example
-
-# Firebase secrets
+node_modules/
+frontend/dist/
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/ml/artifacts/*.joblib
+backend/ml/artifacts/*.json
 serviceAccountKey.json
-firebase-adminsdk-*.json
-
-# IDE
-.vscode/
-
-# OS
+*service-account*.json
+.firebase/
+.firebaserc
 .DS_Store
-Thumbs.db
-# Duplicate nested project
-heart-disease-project/
+coverage/
+*.log
